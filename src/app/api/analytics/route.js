@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Lead from '../../../models/Lead';
 import { getToken } from 'next-auth/jwt';
+export const dynamic = 'force-dynamic';
+
 
 export async function GET(req) {
   try {

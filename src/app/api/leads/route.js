@@ -5,6 +5,7 @@ import ActivityLog from '../../../../models/ActivityLog';
 import { getToken } from 'next-auth/jwt';
 import { sendEmail } from '../../../../lib/email';
 import mongoose from 'mongoose';
+export const dynamic = 'force-dynamic';
 
 export async function PUT(req, { params }) {
   try {
@@ -20,15 +21,16 @@ export async function PUT(req, { params }) {
 
     const updatedLead = await Lead.findByIdAndUpdate(id, body, { new: true }).populate('assignedTo', 'name email');
 
-    // Detect Changes for Audit Trail
     let logDetails = [];
-    if (oldLead.status !== updatedLead.status) logDetails.push(`Status changed from ${oldLead.status} to ${updatedLead.status}`);
+    if (oldLead.status !== updatedLead.status) {
+      logDetails.push(`Status changed from ${oldLead.status} to ${updatedLead.status}`);
+    }
     
-    // Detect Assignment Changes
-    const oldAgent = oldLead.assignedTo ? String(oldLead.assignedTo) : null;
-    const newAgent = updatedLead.assignedTo ? String(updatedLead.assignedTo._id) : null;
+    // SAFE ID COMPARISON
+    const oldAgentId = oldLead.assignedTo ? String(oldLead.assignedTo) : null;
+    const newAgentId = updatedLead.assignedTo ? String(updatedLead.assignedTo._id) : null;
     
-    if (oldAgent !== newAgent) {
+    if (oldAgentId !== newAgentId) {
       if (updatedLead.assignedTo) {
         logDetails.push(`Assigned to ${updatedLead.assignedTo.name}`);
         await sendEmail({
@@ -41,7 +43,6 @@ export async function PUT(req, { params }) {
       }
     }
 
-    // Save to ActivityLog if changes happened
     if (logDetails.length > 0) {
       await ActivityLog.create({
         leadId: new mongoose.Types.ObjectId(id),
@@ -54,7 +55,7 @@ export async function PUT(req, { params }) {
     return NextResponse.json(updatedLead, { status: 200 });
   } catch (error) {
     console.error("🔥 UPDATE CRASH:", error);
-    return NextResponse.json({ error: 'Failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update lead' }, { status: 500 });
   }
 }
 

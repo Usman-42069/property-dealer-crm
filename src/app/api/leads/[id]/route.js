@@ -3,6 +3,8 @@ import dbConnect from '../../../../../lib/mongodb';
 import ActivityLog from '../../../../../models/ActivityLog';
 import { getToken } from 'next-auth/jwt';
 import mongoose from 'mongoose';
+export const dynamic = 'force-dynamic';
+
 
 export async function GET(req, { params }) {
   try {
