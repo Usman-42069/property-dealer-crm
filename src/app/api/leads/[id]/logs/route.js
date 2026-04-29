@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import dbConnect from '../../../../../lib/mongodb';
 import ActivityLog from '../../../../../models/ActivityLog';
 import { getToken } from 'next-auth/jwt';
@@ -9,14 +10,16 @@ export async function GET(req, { params }) {
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
-    const { id } = params;
+    const { id } = await params;
 
-    const logs = await ActivityLog.find({ leadId: id })
-      .populate('performedBy', 'name')
-      .sort({ createdAt: -1 }); // Newest first
+    const logs = await ActivityLog.find({
+      leadId: new mongoose.Types.ObjectId(id)
+    })
+    .populate('performedBy', 'name')
+    .sort({ createdAt: -1 });
 
     return NextResponse.json(logs, { status: 200 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch logs' }, { status: 500 });
+    return NextResponse.json([], { status: 200 });
   }
 }

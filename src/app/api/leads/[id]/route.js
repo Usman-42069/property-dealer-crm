@@ -1,32 +1,51 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '../../../../../lib/mongodb';
-import ActivityLog from '../../../../../models/ActivityLog';
-import { getToken } from 'next-auth/jwt';
 import mongoose from 'mongoose';
-export const dynamic = 'force-dynamic';
+import dbConnect from '../../../../lib/mongodb';
+import Lead from '../../../../models/Lead';
+import ActivityLog from '../../../../models/ActivityLog';
+import { getToken } from 'next-auth/jwt';
+import { sendEmail } from '../../../../lib/email';
 
-
-export async function GET(req, { params }) {
+export async function PUT(req, { params }) {
   try {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
+    const body = await req.json();
     const { id } = await params;
 
-    // Search by both raw ID and ObjectId to be 100% sure we find it
-    const logs = await ActivityLog.find({
-      $or: [
-        { leadId: id },
-        { leadId: new mongoose.Types.ObjectId(id) }
-      ]
-    })
-    .populate('performedBy', 'name')
-    .sort({ createdAt: -1 });
+    const oldLead = await Lead.findById(id);
+    if (!oldLead) return NextResponse.json({ error: 'Not Found' }, { status: 404 });
 
-    return NextResponse.json(logs, { status: 200 });
+    const updatedLead = await Lead.findByIdAndUpdate(id, body, { new: true }).populate('assignedTo', 'name email');
+
+    let logDetails = [];
+    if (body.status && oldLead.status !== body.status) {
+      logDetails.push(`Status changed from ${oldLead.status} to ${body.status}`);
+    }
+
+    if (logDetails.length > 0) {
+      await ActivityLog.create({
+        leadId: new mongoose.Types.ObjectId(id),
+        action: 'Updated Lead',
+        performedBy: new mongoose.Types.ObjectId(token.id),
+        details: logDetails.join(', ')
+      });
+    }
+
+    return NextResponse.json(updatedLead, { status: 200 });
   } catch (error) {
-    console.error("🔥 FETCH LOGS ERROR:", error);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
+}
+
+export async function DELETE(req, { params }) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token || token.role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  await dbConnect();
+  const { id } = await params;
+  await Lead.findByIdAndDelete(id);
+  await ActivityLog.deleteMany({ leadId: new mongoose.Types.ObjectId(id) });
+  return NextResponse.json({ message: 'Deleted' }, { status: 200 });
 }
