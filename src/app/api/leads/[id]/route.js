@@ -12,16 +12,22 @@ export async function GET(req, { params }) {
     await dbConnect();
     const { id } = await params;
 
-    // We use a flexible query to find logs by String or ObjectId
-    const logs = await ActivityLog.find({ 
-      leadId: id 
-    })
-    .populate('performedBy', 'name')
-    .sort({ createdAt: -1 });
+    // Aggressive matching: Search by raw string AND ObjectId
+    const query = {
+      $or: [
+        { leadId: id },
+        { leadId: new mongoose.Types.ObjectId(id) }
+      ]
+    };
 
+    const logs = await ActivityLog.find(query)
+      .populate('performedBy', 'name')
+      .sort({ createdAt: -1 });
+
+    console.log(`🔍 Found ${logs.length} logs for Lead ID: ${id}`);
     return NextResponse.json(logs, { status: 200 });
   } catch (error) {
-    console.error("Timeline Fetch Error:", error);
-    return NextResponse.json({ error: 'Failed' }, { status: 500 });
+    console.error("🔥 Timeline Fetch Error:", error);
+    return NextResponse.json([], { status: 200 }); // Return empty array instead of error
   }
 }

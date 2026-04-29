@@ -41,13 +41,21 @@ export async function POST(req) {
     // 1. Log the Activity - Fixed with ObjectId conversion
     try {
       if (logDetails.length > 0) {
-      await ActivityLog.create({
-        leadId: id, // Use the raw ID string from the URL
-        action: 'Updated Lead',
-        performedBy: token.id,
-        details: logDetails.join(', ')
-      });
+      try {
+        const logData = {
+          leadId: new mongoose.Types.ObjectId(id), // Force ObjectId for writing
+          action: 'Updated Lead',
+          performedBy: new mongoose.Types.ObjectId(token.id), 
+          details: logDetails.join(', ')
+        };
+        
+        const createdLog = await ActivityLog.create(logData);
+        console.log("✅ Log successfully saved:", createdLog._id);
+      } catch (logError) {
+        console.error("❌ Log saving failed:", logError);
+      }
     }
+    
     } catch (logErr) {
       console.error("🔥 LOGGING FAILED ON CREATE:", logErr);
     }
