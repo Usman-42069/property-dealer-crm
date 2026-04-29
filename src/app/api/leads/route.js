@@ -40,12 +40,14 @@ export async function POST(req) {
 
     // 1. Log the Activity - Fixed with ObjectId conversion
     try {
+      if (logDetails.length > 0) {
       await ActivityLog.create({
-        leadId: newLead._id,
-        action: 'Created Lead',
-        performedBy: new mongoose.Types.ObjectId(token.id), // Forced ObjectId
-        details: `Lead ${newLead.name} was created.`
+        leadId: id, // Use the raw ID string from the URL
+        action: 'Updated Lead',
+        performedBy: token.id,
+        details: logDetails.join(', ')
       });
+    }
     } catch (logErr) {
       console.error("🔥 LOGGING FAILED ON CREATE:", logErr);
     }
