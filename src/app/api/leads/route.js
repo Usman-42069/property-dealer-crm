@@ -1,75 +1,73 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose'; // Added this
-import dbConnect from '../../../lib/mongodb';
-import Lead from '../../../models/Lead';
-import ActivityLog from '../../../models/ActivityLog';
+import dbConnect from '../../../../lib/mongodb';
+import Lead from '../../../../models/Lead';
+import ActivityLog from '../../../../models/ActivityLog';
 import { getToken } from 'next-auth/jwt';
-import { sendEmail } from '../../../lib/email';
+import { sendEmail } from '../../../../lib/email';
+import mongoose from 'mongoose';
 
-// GET ALL LEADS (Admin sees all, Agent sees assigned)
-export async function GET(req) {
-  try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    await dbConnect();
-
-    let query = {};
-    if (token.role === 'Agent') {
-      query.assignedTo = token.id;
-    }
-
-    const leads = await Lead.find(query).populate('assignedTo', 'name email').sort({ createdAt: -1 });
-    return NextResponse.json(leads, { status: 200 });
-  } catch (error) {
-    console.error("🔥 GET LEADS CRASH:", error);
-    return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 });
-  }
-}
-
-// CREATE NEW LEAD
-export async function POST(req) {
+export async function PUT(req, { params }) {
   try {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
     const body = await req.json();
+    const { id } = await params;
 
-    const newLead = await Lead.create(body);
+    const oldLead = await Lead.findById(id);
+    if (!oldLead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
 
-    // 1. Log the Activity - Fixed with ObjectId conversion
-    try {
-      if (logDetails.length > 0) {
-      try {
-        const logData = {
-          leadId: new mongoose.Types.ObjectId(id), // Force ObjectId for writing
-          action: 'Updated Lead',
-          performedBy: new mongoose.Types.ObjectId(token.id), 
-          details: logDetails.join(', ')
-        };
-        
-        const createdLog = await ActivityLog.create(logData);
-        console.log("✅ Log successfully saved:", createdLog._id);
-      } catch (logError) {
-        console.error("❌ Log saving failed:", logError);
+    const updatedLead = await Lead.findByIdAndUpdate(id, body, { new: true }).populate('assignedTo', 'name email');
+
+    // Detect Changes for Audit Trail
+    let logDetails = [];
+    if (oldLead.status !== updatedLead.status) logDetails.push(`Status changed from ${oldLead.status} to ${updatedLead.status}`);
+    
+    // Detect Assignment Changes
+    const oldAgent = oldLead.assignedTo ? String(oldLead.assignedTo) : null;
+    const newAgent = updatedLead.assignedTo ? String(updatedLead.assignedTo._id) : null;
+    
+    if (oldAgent !== newAgent) {
+      if (updatedLead.assignedTo) {
+        logDetails.push(`Assigned to ${updatedLead.assignedTo.name}`);
+        await sendEmail({
+          to: updatedLead.assignedTo.email,
+          subject: `New Lead Assigned: ${updatedLead.name}`,
+          html: `<p>Admin assigned <strong>${updatedLead.name}</strong> to you.</p>`
+        });
+      } else {
+        logDetails.push(`Lead unassigned`);
       }
     }
-    
-    } catch (logErr) {
-      console.error("🔥 LOGGING FAILED ON CREATE:", logErr);
+
+    // Save to ActivityLog if changes happened
+    if (logDetails.length > 0) {
+      await ActivityLog.create({
+        leadId: new mongoose.Types.ObjectId(id),
+        action: 'Updated Lead',
+        performedBy: new mongoose.Types.ObjectId(token.id),
+        details: logDetails.join(', ')
+      });
     }
 
-    // 2. Send Email Notification
-    await sendEmail({
-      to: token.email,
-      subject: `New Lead Created: ${newLead.name}`,
-      html: `<h3>New Lead Alert</h3><p>A new lead (<strong>${newLead.name}</strong>) has entered the system with a budget of ${newLead.budget}.</p>`
-    });
-
-    return NextResponse.json(newLead, { status: 201 });
+    return NextResponse.json(updatedLead, { status: 200 });
   } catch (error) {
-    console.error("🔥 CREATE LEAD CRASH:", error);
-    return NextResponse.json({ error: 'Failed to create lead' }, { status: 500 });
+    console.error("🔥 UPDATE CRASH:", error);
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req, { params }) {
+  try {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (!token || token.role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    await dbConnect();
+    const { id } = await params;
+    await Lead.findByIdAndDelete(id);
+    await ActivityLog.deleteMany({ leadId: id });
+    return NextResponse.json({ message: 'Deleted' }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
 }
