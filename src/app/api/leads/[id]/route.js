@@ -25,6 +25,20 @@ export async function PUT(req, { params }) {
       logDetails.push(`Status changed from ${oldLead.status} to ${body.status}`);
     }
 
+    const oldAssignedTo = oldLead.assignedTo ? oldLead.assignedTo.toString() : null;
+    const newAssignedTo = body.assignedTo ? body.assignedTo.toString() : null;
+
+    if (newAssignedTo && oldAssignedTo !== newAssignedTo) {
+      logDetails.push(`Assigned to ${updatedLead.assignedTo?.name}`);
+      if (updatedLead.assignedTo?.email) {
+        await sendEmail({
+          to: updatedLead.assignedTo.email,
+          subject: 'New Lead Assigned - Property CRM',
+          html: `<h3>New Lead Assignment</h3><p>Hello ${updatedLead.assignedTo.name},</p><p>A new lead (<b>${updatedLead.name}</b>) has just been assigned to you.</p><p>Log in to your dashboard to view details.</p>`
+        });
+      }
+    }
+
     if (logDetails.length > 0) {
       await ActivityLog.create({
         leadId: new mongoose.Types.ObjectId(id),

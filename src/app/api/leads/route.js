@@ -27,6 +27,15 @@ export async function POST(req) {
     await dbConnect();
     const body = await req.json();
     const newLead = await Lead.create(body);
+    const populatedLead = await Lead.findById(newLead._id).populate('assignedTo', 'name email');
+
+    if (populatedLead.assignedTo?.email) {
+      await sendEmail({
+        to: populatedLead.assignedTo.email,
+        subject: 'New Lead Assigned - Property CRM',
+        html: `<h3>New Lead Assignment</h3><p>Hello ${populatedLead.assignedTo.name},</p><p>A new lead (<b>${populatedLead.name}</b>) has just been assigned to you.</p><p>Log in to your dashboard to view details.</p>`
+      });
+    }
 
     await ActivityLog.create({
       leadId: newLead._id,
